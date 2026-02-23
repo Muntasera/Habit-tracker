@@ -1,0 +1,166 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1 class="text-2xl font-semibold mb-4">Analytics</h1>
+
+<div class="card rounded-2xl p-4 mb-6">
+  <h2 class="text-lg font-semibold mb-3">All Habits Combined</h2>
+  <canvas id="overall-chart" height="140"></canvas>
+  <div id="overall-summary" class="text-sm opacity-80 mt-3"></div>
+</div>
+
+
+<h2 class="text-xl font-semibold mb-3">Individual Habit Analytics</h2>
+<div class="grid gap-4">
+  {% for habit in habits %}
+  <div class="card rounded-2xl p-4">
+    <div class="flex items-center gap-3 mb-4">
+      <div class="w-3 h-3 rounded-full" style="background:{{ habit.color }}"></div>
+      <div class="font-medium">{{ habit.name }}</div>
+    </div>
+    
+    <div class="grid md:grid-cols-2 gap-4">
+      <div>
+        <canvas id="chart-{{ habit.id }}" height="160" class="habit-chart" data-habit-id="{{ habit.id }}"></canvas>
+      </div>
+      <div class="flex flex-col justify-center">
+        <div class="text-sm opacity-80 mb-2">This Week's Performance</div>
+        <div id="summary-{{ habit.id }}" class="text-sm opacity-80"></div>
+        <div class="mt-2 text-xs opacity-60">
+          Green bars show days you completed this habit
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<script>
+
+if (!window.ActiveCharts) window.ActiveCharts = {};
+
+function destroyChart(id) {
+    if (window.ActiveCharts[id]) {
+        window.ActiveCharts[id].destroy();
+        window.ActiveCharts[id] = null;
+    }
+}
+
+
+function loadOverallChart() {
+  fetch("/analytics.json")
+    .then(response => response.json())
+    .then(({ labels, data }) => {
+        const total = data.reduce((a, b) => a + b, 0);
+        document.getElementById("overall-summary").textContent =
+            `Total check-ins this week: ${total}`;
+
+        const canvasId = "overall-chart";
+        const canvas = document.getElementById(canvasId);
+        if (!canvas) return;
+
+        const ctx = canvas.getContext("2d");
+
+
+        destroyChart(canvasId);
+
+
+        window.ActiveCharts[canvasId] = new Chart(ctx, {
+            type: "bar",
+            data: {
+                labels,
+                datasets: [{
+                    label: "Check-ins",
+                    data,
+                    backgroundColor: "rgba(16, 185, 129, 0.5)",
+                    borderRadius: 6,
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: { y: { beginAtZero: true, precision: 0 } },
+                plugins: { legend: { display: false } }
+            }
+        });
+    });
+}
+
+
+function loadHabitCharts() {
+  document.querySelectorAll('.habit-chart').forEach(canvas => {
+    const habitId = canvas.dataset.habitId;
+    const chartId = `chart-${habitId}`;
+    
+    fetch(`/analytics/habit/${habitId}.json`)
+      .then(r => r.json())
+      .then(({ labels, data, color, name }) => {
+        const ctx = canvas.getContext("2d");
+        
+
+        const completed = data.filter(val => val === 1).length;
+        const totalDays = data.length;
+        const percentage = Math.round((completed / totalDays) * 100);
+        
+
+        const summaryEl = document.getElementById(`summary-${habitId}`);
+        if (summaryEl) {
+          summaryEl.innerHTML = `
+            <div class="text-emerald-400 font-semibold">${completed}/${totalDays} days (${percentage}%)</div>
+            <div class="mt-1">Completed this week</div>
+          `;
+        }
+        
+
+        destroyChart(chartId);
+        
+        window.ActiveCharts[chartId] = new Chart(ctx, {
+          type: "bar",
+          data: {
+            labels,
+            datasets: [{
+              label: name,
+              data,
+              backgroundColor: data.map(val => 
+                val === 1 ? color : 'rgba(100, 116, 139, 0.3)' 
+              ),
+              borderRadius: 6,
+              borderColor: color,
+              borderWidth: 1
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: { 
+              y: { 
+                beginAtZero: true, 
+                max: 1,
+                ticks: { 
+                  stepSize: 1,
+                  callback: function(value) {
+                    return value === 1 ? '✓' : '';
+                  }
+                }
+              }
+            },
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                callbacks: {
+                  label: function(context) {
+                    return context.parsed.y === 1 ? 'Completed' : 'Not completed';
+                  }
+                }
+              }
+            }
+          }
+        });
+      });
+  });
+}
+
+
+loadOverallChart();
+loadHabitCharts();
+</script>
+
+{% endblock %}
